@@ -1,8 +1,8 @@
 # 3jo
 
-<h2>계획서 https://docs.google.com/presentation/d/1ApCFfZzf_D2mYTSFcA1GCaDK9Jv3D6v9RlgkbTWBFfI/edit?usp=sharing</h2>
+<h3>계획서 https://docs.google.com/presentation/d/1ApCFfZzf_D2mYTSFcA1GCaDK9Jv3D6v9RlgkbTWBFfI/edit?usp=sharing</h3>
 
-#1일차(9/18, 목)
+<h5>1일차(9/18, 목)</h5>h5>
 #팀명, 주제, 계획서, 역할
 
 #2일차(9/19, 금)
