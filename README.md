@@ -1,6 +1,6 @@
 # 3jo
 
-#계획서 https://docs.google.com/presentation/d/1ApCFfZzf_D2mYTSFcA1GCaDK9Jv3D6v9RlgkbTWBFfI/edit?usp=sharing
+<h>계획서 https://docs.google.com/presentation/d/1ApCFfZzf_D2mYTSFcA1GCaDK9Jv3D6v9RlgkbTWBFfI/edit?usp=sharing</h>
 
 #1일차(9/18, 목)
 #팀명, 주제, 계획서, 역할
