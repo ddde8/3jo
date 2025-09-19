@@ -1,10 +1,10 @@
 import cv2
 import numpy as np
+import time
 from videoSprite import VideoSprite
 from graphSprite import GraphSprite
 from buttonSprite import ButtonSprite
-
-# graphSprite는 아래에서 정의
+from textSprite import TextSprite
 
 def main():
     screen_w, screen_h = 900, 600
@@ -14,6 +14,8 @@ def main():
     video_sprite = VideoSprite(130, 100, video_source=0, size=(640, 480))
     graph_sprite = GraphSprite(130, 100, size=(640, 480))
     button_sprite = ButtonSprite(370, 20, width=160, height=60, text="화면 전환")
+    # 현재 시간 표시용 텍스트 스프라이트
+    time_text_sprite = TextSprite(30, 30, "", font_size=28, color=(15,15,15))
 
     # 상태: 0=영상, 1=그래프
     state = [0]
@@ -28,14 +30,18 @@ def main():
 
     while True:
         frame = canvas.copy()
+        # 현재 시간으로 텍스트 갱신
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        time_text_sprite.set_text(f"현재 시간: {now_str}")
         button_sprite.draw(frame)
+        time_text_sprite.draw(frame)
         if state[0] == 0:
             video_sprite.update()
             video_sprite.draw(frame)
         else:
             graph_sprite.draw(frame)
         cv2.imshow("main", frame)
-        key = cv2.waitKey(1)
+        key = cv2.waitKey(30)
         if key == 27:
             break
 
