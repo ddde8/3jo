@@ -14,6 +14,9 @@
 
 - 사용할 yolo 설정
 
+#동영상(09/19 촬영)
+https://drive.google.com/file/d/1BiqLE1u3qhsW5oRvwUoiWrYG-WZX0nwO/view?usp=sharing
+
 
 ### 1. **동영상 데이터 속 좌석 구분**
 
