@@ -6,12 +6,16 @@ from graphSprite import GraphSprite
 from buttonSprite import ButtonSprite
 from textSprite import TextSprite
 
+VIDEO_SOURCE = 0  # 기본 웹캠
+
+
+
 def main():
     screen_w, screen_h = 900, 600
     canvas = np.ones((screen_h, screen_w, 3), np.uint8) * 220
 
     # 스프라이트 생성
-    video_sprite = VideoSprite(130, 100, video_source=0, size=(640, 480))
+    video_sprite = VideoSprite(130, 100, video_source=VIDEO_SOURCE, size=(640, 480))
     graph_sprite = GraphSprite(130, 100, size=(640, 480))
     button_sprite = ButtonSprite(370, 20, width=160, height=60, text="화면 전환")
     # 현재 시간 표시용 텍스트 스프라이트
