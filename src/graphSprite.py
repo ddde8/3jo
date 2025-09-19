@@ -1,6 +1,7 @@
 import cv2
 from sprite import Sprite
 import numpy as np
+from textSprite import TextSprite
 
 class GraphSprite(Sprite):
     """통계(그래프) 스프라이트"""
@@ -21,7 +22,15 @@ class GraphSprite(Sprite):
             y2 = y1 - v
             cv2.rectangle(img, (x1, y1), (x2, y2), (100, 100, 255), -1)
             cv2.putText(img, str(v), (x1+10, y2-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 2)
-        cv2.putText(img, "통계 그래프 예시", (self.size[0]//2-100, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
+        # 한글 텍스트를 TextSprite로 생성하여 draw로 합성
+        text_sprite = TextSprite(0, 0, "통계 그래프 예시", font_size=36, color=(255,0,0))
+        # 중앙 상단에 배치
+        h, w = text_sprite.image.shape[:2]
+        x_offset = self.size[0]//2 - w//2
+        y_offset = 20
+        text_sprite.x = x_offset
+        text_sprite.y = y_offset
+        text_sprite.draw(img)
         return img
 
     def update(self):

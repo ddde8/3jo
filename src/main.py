@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from videoSprite import VideoSprite
 from graphSprite import GraphSprite
+from buttonSprite import ButtonSprite
 
 # graphSprite는 아래에서 정의
 
