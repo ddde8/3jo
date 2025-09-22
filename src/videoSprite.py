@@ -8,13 +8,14 @@ class VideoSprite(Sprite):
         super().__init__(x, y)
         self.size = size
         self.cap = cv2.VideoCapture(video_source)
+        # self.cap = cv2.VideoCapture('data/video2.mp4')
         self.image = np.zeros((size[1], size[0], 3), np.uint8)
-        self.model = YOLO('yolo11n.pt')
+        self.model = YOLO('yolo11n.pt', verbose=False)
 
     def update(self):
         if self.cap is not None:
             # ret, frame = self.cap.read()
-            frame = cv2.imread('data/video0.jpg')
+            frame = cv2.imread('data/video3.jpg')
             if frame is None:
                 ret = False
             else:
