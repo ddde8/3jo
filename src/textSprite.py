@@ -5,7 +5,7 @@ import numpy as np
 
 class TextSprite(Sprite):
     """텍스트 스프라이트 클래스"""
-    def __init__(self, x, y, text, font_size=30, color=(255, 0, 0, 0), font_path='data/NanumPenScript-Regular.ttf'):
+    def __init__(self, x, y, text, font_size=30, color=(255, 0, 0, 0), font_path='/Users/jieunchoi/Documents/GitHub/3jo/data/NanumPenScript-Regular.ttf'):
         super().__init__(x, y)
         self.text = text
         self.font_size = font_size

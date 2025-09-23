@@ -8,7 +8,7 @@ from textSprite import TextSprite
 
 # VIDEO_SOURCE = 0  # 기본 웹캠
 # VIDEO_SOURCE = 'data/video2.mp4'  # 동영상 파일
-VIDEO_SOURCE = 'data/IMG_2834.MOV'  # 이미지 파일
+VIDEO_SOURCE = '/Users/jieunchoi/Documents/GitHub/3jo/data/IMG_2838-1.mov'  # 이미지 파일
 
 
 
