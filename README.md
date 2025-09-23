@@ -4,8 +4,7 @@
 - **팀원**: [팀장] 최지은 · 정은진 · 이하은  
 - **주제**: CCTV 기반 주차장 스마트 빈자리 관리 시스템  
 - **계획서**: [링크](https://docs.google.com/presentation/d/1ApCFfZzf_D2mYTSFcA1GCaDK9Jv3D6v9RlgkbTWBFfI/edit?usp=sharing)
-
----
+- **presentation slide**: [링크](https://docs.google.com/presentation/d/11PgjsBpgpl2kGNllB0MSXQI-zZ8Acih5GfWfCS4hQgI/edit?usp=sharing)
 
 ## 📌 프로젝트 개요
 본 프로젝트는 **주차장 CCTV 영상**을 활용하여 주차 구역의 빈자리 여부를 실시간으로 판별하는 시스템입니다.  
