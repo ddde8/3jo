@@ -1,7 +1,7 @@
 # 🚗 3jo – 실시간 주차 관리 시스템(Smart Parking Manager)
 
 - **팀명**: 3jo  
-- **팀원**: [팀장] 최지은 · 정은진 · 이하은  
+- **팀원**: 최지은 · 정은진 · 이하은  
 - **주제**: CCTV 기반 주차장 스마트 빈자리 관리 시스템  
 - **계획서**: [링크](https://docs.google.com/presentation/d/1ApCFfZzf_D2mYTSFcA1GCaDK9Jv3D6v9RlgkbTWBFfI/edit?usp=sharing)
 - **presentation slide**: [링크](https://docs.google.com/presentation/d/11PgjsBpgpl2kGNllB0MSXQI-zZ8Acih5GfWfCS4hQgI/edit?usp=sharing)
@@ -10,6 +10,9 @@
 본 프로젝트는 **주차장 CCTV 영상**을 활용하여 주차 구역의 빈자리 여부를 실시간으로 판별하는 시스템입니다.  
 기존 주차장 관리 시스템은 센서 설치로 인한 비용 부담이 크지만, 본 시스템은 **영상 기반 분석(OpenCV + YOLO)**을 사용하여 저비용·고효율적인 빈자리 관리가 가능합니다.  
 
+## 프로젝트 주제 선정 배경
+- 증가하는 차량 보유율에 비해 부족한 주차 자리 
+- 주차 공간 탐색을 위한 순환 주행 -> 교통 혼잡도, 배출가스 증
 ---
 
 ## 🎯 프로젝트 목표
