@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>주차장 선 그리기</title>
+    <style>
+        body { margin: 0; background-color: #000; overflow: hidden; color: #fff; }
+        #app-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #video-container { position: relative; max-width: 100%; max-height: 100%; }
+        #video-player { max-width: 100%; max-height: 100%; display: block; }
+        #line-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; cursor: crosshair; }
+        #controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 10px; }
+        .button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background-color: #3498db; color: white; }
+        .button:disabled { background-color: #7f8c8d; cursor: not-allowed; } /* 비활성화 상태 스타일 */
+        #message-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; background-color: rgba(0, 0, 0, 0.8); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+        #message-overlay h2 { margin: 0; font-size: 2em; }
+        #message-overlay p { margin-top: 10px; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="message-overlay">
+        <h2>주차장 동영상을 업로드해주세요</h2>
+        <p>분석을 시작하려면 동영상 파일을 선택하세요.</p>
+    </div>
+    <div id="video-container">
+        <video id="video-player" controls></video>
+        <canvas id="line-canvas"></canvas>
+    </div>
+    <div id="controls">
+        <label for="video-upload" class="button">동영상 업로드</label>
+        <input type="file" id="video-upload" accept="video/*" style="display: none;">
+        <button id="submit-lines-btn" class="button" disabled>주차 선 제출</button>
+    </div>
+</div>
+
+<script>
+    const videoPlayer = document.getElementById('video-player');
+    const canvas = document.getElementById('line-canvas');
+    const ctx = canvas.getContext('2d');
+    const videoUpload = document.getElementById('video-upload');
+    const submitBtn = document.getElementById('submit-lines-btn');
+    const messageOverlay = document.getElementById('message-overlay');
+
+    let isDrawing = false;
+    let startPoint = null;
+    let allSpots = []; 
+
+    // 동영상 파일이 선택되면 비디오 재생
+    videoUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const videoUrl = URL.createObjectURL(file);
+            videoPlayer.src = videoUrl;
+            videoPlayer.onloadedmetadata = () => {
+                canvas.width = videoPlayer.videoWidth;
+                canvas.height = videoPlayer.videoHeight;
+                videoPlayer.style.width = `${videoPlayer.videoWidth}px`;
+                videoPlayer.style.height = `${videoPlayer.videoHeight}px`;
+                videoPlayer.pause(); 
+                messageOverlay.style.display = 'none'; // 메시지 숨기기
+                submitBtn.disabled = false; // 제출 버튼 활성화
+            };
+        }
+    });
+
+    // 사각형 그리기 로직
+    canvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        startPoint = { x, y };
+        ctx.strokeStyle = '#3498db';
+        ctx.lineWidth = 3;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        allSpots.forEach(spot => {
+            ctx.beginPath();
+            ctx.strokeRect(spot.x1, spot.y1, spot.x2 - spot.x1, spot.y2 - spot.y1);
+        });
+
+        ctx.beginPath();
+        ctx.strokeRect(startPoint.x, startPoint.y, endX - startPoint.x, endY - startPoint.y);
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        
+        const newSpot = { 
+            x1: startPoint.x, 
+            y1: startPoint.y, 
+            x2: endX, 
+            y2: endY 
+        };
+        allSpots.push(newSpot);
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        allSpots.forEach(spot => {
+            ctx.beginPath();
+            ctx.strokeRect(spot.x1, spot.y1, spot.x2 - spot.x1, spot.y2 - spot.y1);
+        });
+    });
+
+    // 백엔드로 주차 선 데이터 전송
+    submitBtn.addEventListener('click', async () => {
+        const videoFile = videoUpload.files[0];
+        if (!videoFile) {
+            alert('동영상 파일을 먼저 업로드해주세요.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('video', videoFile);
+        formData.append('lines', JSON.stringify(allSpots)); 
+
+        try {
+            const response = await fetch('/set_parking_data', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                alert('주차 선 정보가 성공적으로 전송되었습니다! 이제 분석이 시작됩니다.');
+                window.location.href = "/dashboard";
+            } else {
+                alert('데이터 전송 실패.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('오류가 발생했습니다.');
+        }
+    });
+</script>
+
+</body>
+</html>

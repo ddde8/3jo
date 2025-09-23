@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>주차장 관리 대시보드</title>
+    <style>
+        body { margin: 0; background-color: #000; color: white; overflow: hidden; }
+        #app-container { position: relative; width: 100vw; height: 100vh; }
+        #video-feed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        #parking-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
+        .spot-info { 
+            position: absolute; 
+            padding: 5px; 
+            background-color: rgba(0,0,0,0.6); 
+            border-radius: 5px; 
+            font-family: sans-serif; 
+            text-align: center; 
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s ease-in-out;
+        }
+        .spot-info:hover {
+            transform: scale(1.05);
+            background-color: rgba(0,0,0,0.8);
+        }
+        .spot-id { font-weight: bold; font-size: 16px; }
+        .spot-status { font-size: 14px; margin-top: 5px; }
+        .spot-time { font-size: 12px; margin-top: 2px; }
+        .status-available { background-color: rgba(46, 204, 113, 0.8); } /* 초록 */
+        .status-occupied { background-color: rgba(231, 76, 60, 0.8); } /* 빨강 */
+        .status-reserved { background-color: rgba(255, 165, 0, 0.8); } /* 주황 */
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <img id="video-feed" src="{{ url_for('video_feed') }}">
+    <div id="parking-overlay"></div>
+</div>
+
+<script>
+    const parkingOverlay = document.getElementById('parking-overlay');
+    const videoFeed = document.getElementById('video-feed');
+    let spots = {};
+    let isInitialLoad = true;
+
+    async function updateDashboard() {
+        try {
+            const response = await fetch('/parking_status');
+            const data = await response.json();
+            
+            const videoElement = document.getElementById('video-feed');
+            const scaleX = videoElement.offsetWidth / videoElement.naturalWidth;
+            const scaleY = videoElement.offsetHeight / videoElement.naturalHeight;
+
+            if (isInitialLoad) {
+                for (const id in data) {
+                    const spotDiv = document.createElement('div');
+                    spotDiv.id = `spot-${id}`;
+                    spotDiv.className = 'spot-info';
+                    spotDiv.innerHTML = `<div class="spot-id">${id}</div><div class="spot-status"></div><div class="spot-time"></div>`;
+                    
+                    // 예약 기능 추가: 비어있는 칸 클릭 시 예약 요청
+                    spotDiv.addEventListener('click', () => {
+                        if (data[id].status === 'available') {
+                            fetch(`/reserve/${id}`, { method: 'POST' })
+                                .then(res => res.json())
+                                .then(result => {
+                                    if (result.success) {
+                                        alert(`${id}가 예약되었습니다. 남은 시간: 5분`);
+                                    } else {
+                                        alert(result.message);
+                                    }
+                                });
+                        }
+                    });
+
+                    parkingOverlay.appendChild(spotDiv);
+                    spots[id] = spotDiv;
+                }
+                isInitialLoad = false;
+            }
+            
+            for (const id in data) {
+                const spotDiv = spots[id];
+                const spotData = data[id];
+                
+                // CSS 클래스 업데이트
+                spotDiv.classList.remove('status-available', 'status-occupied', 'status-reserved');
+                
+                let statusText = "";
+                let timeText = "";
+
+                if (spotData.status === 'occupied') {
+                    spotDiv.classList.add('status-occupied');
+                    statusText = '점유됨';
+                    const elapsedTime = spotData.occupied_since ? Math.floor(Date.now() / 1000) - spotData.occupied_since : 0;
+                    const minutes = Math.floor(elapsedTime / 60);
+                    const seconds = elapsedTime % 60;
+                    timeText = `(${minutes}분 ${seconds}초)`;
+                } else if (spotData.status === 'reserved') {
+                    spotDiv.classList.add('status-reserved');
+                    statusText = '예약됨';
+                    const remainingTime = spotData.remaining_time;
+                    const minutes = Math.floor(remainingTime / 60);
+                    const seconds = remainingTime % 60;
+                    timeText = `(남은 시간: ${minutes}분 ${seconds}초)`;
+                } else {
+                    spotDiv.classList.add('status-available');
+                    statusText = '예약 가능';
+                    timeText = "(클릭하여 예약)";
+                }
+
+                spotDiv.querySelector('.spot-status').textContent = statusText;
+                spotDiv.querySelector('.spot-time').textContent = timeText;
+
+                // 좌표 정보를 기반으로 위치 및 크기 설정
+                const [x1, y1, x2, y2] = spotData.coords;
+                
+                spotDiv.style.left = `${x1 * scaleX}px`;
+                spotDiv.style.top = `${y1 * scaleY}px`;
+                spotDiv.style.width = `${(x2 - x1) * scaleX}px`;
+                spotDiv.style.height = `${(y2 - y1) * scaleY}px`;
+            }
+        } catch (error) {
+            console.error("데이터 업데이트 실패:", error);
+        }
+    }
+    
+    // 비디오 크기에 맞춰 오버레이 위치 조정 및 업데이트 시작
+    function initializeDashboard() {
+        const video = document.getElementById('video-feed');
+        if (video.offsetWidth > 0) {
+            adjustOverlay();
+            setInterval(updateDashboard, 1000);
+        } else {
+            setTimeout(initializeDashboard, 100);
+        }
+    }
+
+    function adjustOverlay() {
+        const video = document.getElementById('video-feed');
+        const overlay = document.getElementById('parking-overlay');
+        overlay.style.width = `${video.offsetWidth}px`;
+        overlay.style.height = `${video.offsetHeight}px`;
+    }
+
+    videoFeed.addEventListener('load', initializeDashboard);
+    window.addEventListener('resize', adjustOverlay);
+</script>
+
+</body>
+</html>
