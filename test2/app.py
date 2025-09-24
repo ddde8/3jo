@@ -3,6 +3,7 @@ import json
 import cv2
 import threading
 import time
+import numpy as np
 from flask import Flask, Response, render_template, request, jsonify, redirect, url_for
 from werkzeug.utils import secure_filename
 from ultralytics import YOLO
@@ -26,31 +27,39 @@ latest_frame_lock = threading.Lock()
 latest_yolo_frame = None
 latest_yolo_frame_lock = threading.Lock()
 
-# 신뢰도 임계값 설정
+# YOLO-Seg threshold and delay settings
 CONF_THRESHOLD = 0.5
+IOU_THRESHOLD = 0.3 # 겹침 비율 임계값
 OCCUPIED_RELEASE_DELAY = 3  # 차량이 사라진 후 3초 동안 점유 상태 유지
 
 # --------------------
 # 💡 Helper functions
 # --------------------
-def rect_overlap(rect1, rect2):
+def create_mask_from_coords(coords, frame_shape):
     """
-    두 사각형이 조금이라도 겹치면 True를 반환합니다.
+    주어진 좌표를 바탕으로 이진 마스크를 생성합니다.
     """
-    x1_min, y1_min, x1_max, y1_max = rect1
-    x2_min, y2_min, x2_max, y2_max = rect2
-    
-    horizontal_overlap = (x1_min < x2_max) and (x2_min < x1_max)
-    vertical_overlap = (y1_min < y2_max) and (y2_min < y1_max)
-    
-    return horizontal_overlap and vertical_overlap
+    mask = np.zeros(frame_shape[:2], dtype=np.uint8)
+    points = np.array([[coords[0], coords[1]], [coords[2], coords[1]], [coords[2], coords[3]], [coords[0], coords[3]]], dtype=np.int32)
+    cv2.fillPoly(mask, [points], 255)
+    return mask
+
+def calculate_iou_from_masks(mask1, mask2):
+    """
+    두 마스크의 IoU(Intersection over Union)를 계산합니다.
+    """
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    if union == 0:
+        return 0
+    return intersection / union
 
 # --------------------
 # 💡 Parking Analysis and Reservation Monitoring Logic
 # --------------------
 def reservation_monitor():
     """
-    백그라운드에서 예약 시간을 감시하고, 만료된 예약을 취소합니다.
+    Monitors reservation times in the background and cancels expired reservations.
     """
     while True:
         now = time.time()
@@ -64,7 +73,8 @@ def reservation_monitor():
 
 def analyze_video():
     """
-    YOLO 모델을 로드하고 비디오 프레임을 분석하여 주차 공간 상태를 업데이트합니다.
+    Loads the YOLO-Seg model and continuously analyzes video frames for car segmentation.
+    Updates the parking spot status and shares the latest processed frame.
     """
     global PARKING_SPOTS, latest_frame, latest_yolo_frame
 
@@ -78,50 +88,62 @@ def analyze_video():
         return
 
     try:
-        # Load the YOLO model just once, outside the loop
-        model = YOLO('yolo11n.pt')
-        print(f"YOLO model loaded. Class names: {model.names}")
+        # Load the YOLO-Seg model
+        model = YOLO('yolov8n-seg.pt')
+        print(f"YOLO-Seg model loaded. Class names: {model.names}")
     except Exception as e:
-        print(f"Error loading YOLO model: {e}")
+        print(f"Error loading YOLO-Seg model: {e}")
         return
+
+    # 첫 프레임을 읽어와서 주차 공간 마스크를 미리 생성합니다.
+    ret, initial_frame = cap.read()
+    if not ret:
+        print("Error: Could not read initial frame.")
+        return
+    
+    parking_spot_masks = {}
+    for spot_id, spot in PARKING_SPOTS.items():
+        parking_spot_masks[spot_id] = create_mask_from_coords(spot["coords"], initial_frame.shape)
+    
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0) # 비디오를 다시 처음으로 돌립니다.
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            # Loop the video if it ends
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             continue
         
-        # Perform object detection on the current frame
         results = model(frame, verbose=False)[0]
         
-        detected_cars = []
-        # Iterate through all detected objects with confidence filtering
-        for box, cls, conf in zip(results.boxes.xyxy.cpu().numpy(),
-                                  results.boxes.cls.cpu().numpy(),
-                                  results.boxes.conf.cpu().numpy()):
-            # Filter for cars, buses, and trucks (COCO dataset class IDs: car=2, bus=5, truck=7)
-            if int(cls) in [2, 5, 7] and conf > CONF_THRESHOLD:
-                detected_cars.append(box)
+        detected_car_masks = []
+        if results.masks is not None:
+            for mask, cls, conf in zip(results.masks.data.cpu().numpy(),
+                                      results.boxes.cls.cpu().numpy(),
+                                      results.boxes.conf.cpu().numpy()):
+                if int(cls) in [2, 5, 7] and conf > CONF_THRESHOLD:
+                    detected_car_masks.append(mask)
 
-        # Draw YOLO bounding boxes on a separate frame for the left panel
+        # Draw YOLO segmentation masks on a separate frame for the left panel
         yolo_frame = frame.copy()
-        for box in detected_cars:
-            x1, y1, x2, y2 = box.astype(int)
-            cv2.rectangle(yolo_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-        
-        # Store the processed YOLO frame in the shared variable
+        if results.masks is not None:
+            # 마스크를 오버레이
+            for i, mask in enumerate(results.masks.data):
+                yolo_frame = results.plot(conf=False, labels=False, boxes=False, masks=True)
+                yolo_frame = cv2.cvtColor(yolo_frame, cv2.COLOR_BGR2RGB)
+                break # 첫 번째 객체 마스크만 플로팅
+                
         with latest_yolo_frame_lock:
             latest_yolo_frame = yolo_frame.copy()
 
-        # Update parking spot status based on detected cars
+        # Update parking spot status based on detected car masks
         for spot_id, spot in PARKING_SPOTS.items():
             is_occupied = False
-            spot_rect = spot["coords"]
-
-            for car_box in detected_cars:
-                # 겹치는 부분이 조금이라도 있으면 True를 반환
-                if rect_overlap(spot_rect, car_box):
+            spot_mask = parking_spot_masks[spot_id]
+            
+            for car_mask in detected_car_masks:
+                # 차량 마스크와 주차 공간 마스크의 겹침 비율 계산
+                iou_score = calculate_iou_from_masks(spot_mask, car_mask)
+                if iou_score > IOU_THRESHOLD:
                     is_occupied = True
                     break
             
@@ -137,16 +159,14 @@ def analyze_video():
                         spot["status"] = "available"
                         spot["occupied_since"] = None
 
-        # Store the processed frame in the shared variable for the right panel
         with latest_frame_lock:
             latest_frame = frame.copy()
 
-        # Pause to prevent high CPU usage
         time.sleep(1)
 
 def generate_yolo_feed():
     """
-    Streams the live video feed with only YOLO detected objects.
+    Streams the live video feed with only YOLO-Seg detected objects.
     """
     while True:
         with latest_yolo_frame_lock:
@@ -169,7 +189,6 @@ def generate_video_feed():
                 continue
             frame = latest_frame.copy()
 
-        # Overlay parking spot status on the frame
         if PARKING_SPOTS_DEFINED and PARKING_SPOTS:
             for spot_id, spot_data in PARKING_SPOTS.items():
                 if "coords" in spot_data and isinstance(spot_data["coords"], list) and len(spot_data["coords"]) == 4:
@@ -230,7 +249,6 @@ def set_parking_data():
 
     PARKING_SPOTS_DEFINED = True
     
-    # Start the background threads for analysis and reservation monitoring
     threading.Thread(target=analyze_video, daemon=True).start()
     threading.Thread(target=reservation_monitor, daemon=True).start()
     
