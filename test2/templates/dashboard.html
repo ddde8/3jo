@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주차장 현황 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        @media (min-width: 768px) {
+            .container {
+                flex-direction: row;
+            }
+        }
+        .video-container {
+            flex: 1;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background-color: #1f2937;
+            text-align: center;
+        }
+        .video-label {
+            color: #d1d5db;
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col items-center">
+    <div class="max-w-7xl w-full">
+        <h1 class="text-3xl font-bold mb-6 text-center text-teal-400">스마트 주차장 관리 시스템</h1>
+        
+        <div class="container rounded-lg shadow-lg">
+            <!-- YOLO 감지 결과 (왼쪽 패널) -->
+            <div class="video-container">
+                <div class="video-label">YOLO 감지 결과</div>
+                <img src="{{ url_for('yolo_feed') }}" class="rounded-lg w-full h-auto border-4 border-blue-500" alt="YOLO 감지 영상">
+            </div>
+            
+            <!-- 주차 공간 상태 (오른쪽 패널) -->
+            <div class="video-container">
+                <div class="video-label">주차 공간 상태</div>
+                <img src="{{ url_for('video_feed') }}" class="rounded-lg w-full h-auto border-4 border-green-500" alt="주차 공간 상태 영상">
+            </div>
+        </div>
+
+        <!-- 주차 현황 및 예약 정보 -->
+        <div class="mt-8 p-6 bg-gray-800 rounded-lg shadow-lg max-w-xl mx-auto">
+            <h2 class="text-2xl font-bold mb-4 text-center text-indigo-400">주차 현황</h2>
+            <div id="parking-status-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <!-- 상태가 여기에 동적으로 로드됩니다 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const parkingStatusContainer = document.getElementById('parking-status-container');
+            
+            function updateParkingStatus() {
+                fetch('{{ url_for("get_parking_status") }}')
+                    .then(response => response.json())
+                    .then(data => {
+                        parkingStatusContainer.innerHTML = '';
+                        const sortedSpots = Object.keys(data).sort();
+                        sortedSpots.forEach(spotId => {
+                            const spot = data[spotId];
+                            const status = spot.status;
+                            let bgColor = '';
+                            let textColor = 'text-white';
+                            let displayStatus = '';
+
+                            if (status === 'occupied') {
+                                bgColor = 'bg-red-500';
+                                displayStatus = '점유됨';
+                            } else if (status === 'reserved') {
+                                bgColor = 'bg-orange-500';
+                                displayStatus = '예약됨';
+                            } else {
+                                bgColor = 'bg-green-500';
+                                displayStatus = '빈 공간';
+                            }
+
+                            const spotElement = `
+                                <div class="p-4 rounded-lg text-center ${bgColor} ${textColor} shadow-md">
+                                    <div class="font-bold text-lg">${spotId}</div>
+                                    <div class="text-sm">${displayStatus}</div>
+                                </div>
+                            `;
+                            parkingStatusContainer.innerHTML += spotElement;
+                        });
+                    })
+                    .catch(error => console.error('Error fetching parking status:', error));
+            }
+
+            // 초기 로드 및 3초마다 상태 업데이트
+            updateParkingStatus();
+            setInterval(updateParkingStatus, 3000);
+        });
+    </script>
+</body>
+</html>
