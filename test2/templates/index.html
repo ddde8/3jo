@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주차장 영역 설정</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #video-container {
+            position: relative;
+            cursor: crosshair;
+        }
+        #parking-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .spot-info {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-4xl w-full bg-gray-800 p-8 rounded-lg shadow-xl">
+        <h1 class="text-3xl font-bold mb-4 text-center text-teal-400">주차장 영역 설정</h1>
+        <p class="text-gray-400 text-center mb-6">
+            아래에 주차장 영상을 업로드하고 마우스로 각 주차 공간의 사각형 영역을 그려주세요.
+        </p>
+        
+        <form id="upload-form" enctype="multipart/form-data" class="space-y-6">
+            <div class="flex flex-col items-center">
+                <label for="video-input" class="w-full text-center py-3 px-6 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:bg-gray-700 transition-colors">
+                    <span id="file-name" class="text-gray-400">클릭하여 영상 파일 선택</span>
+                </label>
+                <input type="file" id="video-input" name="video" class="hidden" accept="video/*" required>
+            </div>
+            
+            <div id="video-container" class="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+                <video id="video-player" class="w-full h-full object-contain" controls></video>
+                <canvas id="parking-canvas" class="w-full h-full"></canvas>
+            </div>
+            
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-colors">
+                설정 완료 및 시작
+            </button>
+        </form>
+        
+        <div id="message-area" class="mt-6 text-center text-sm font-semibold"></div>
+    </div>
+
+    <script>
+        const videoInput = document.getElementById('video-input');
+        const videoPlayer = document.getElementById('video-player');
+        const canvas = document.getElementById('parking-canvas');
+        const videoContainer = document.getElementById('video-container');
+        const messageArea = document.getElementById('message-area');
+        const fileNameSpan = document.getElementById('file-name');
+        const ctx = canvas.getContext('2d');
+        
+        let isDrawing = false;
+        let startX, startY;
+        let drawnLines = [];
+        
+        // 파일 선택 시 비디오 로드
+        videoInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const videoURL = URL.createObjectURL(file);
+                videoPlayer.src = videoURL;
+                fileNameSpan.textContent = file.name;
+                
+                videoPlayer.addEventListener('loadedmetadata', () => {
+                    const videoWidth = videoPlayer.videoWidth;
+                    const videoHeight = videoPlayer.videoHeight;
+                    canvas.width = videoWidth;
+                    canvas.height = videoHeight;
+                });
+            }
+        });
+        
+        // 캔버스 드로잉 로직
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) { // 좌클릭
+                isDrawing = true;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                startX = (e.clientX - rect.left) * scaleX;
+                startY = (e.clientY - rect.top) * scaleY;
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // 기존 드로잉 지우기
+                redrawAllLines();
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const currentX = (e.clientX - rect.left) * scaleX;
+            const currentY = (e.clientY - rect.top) * scaleY;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            redrawAllLines();
+            drawRectangle(startX, startY, currentX, currentY);
+        });
+        
+        canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 0 && isDrawing) {
+                isDrawing = false;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const endX = (e.clientX - rect.left) * scaleX;
+                const endY = (e.clientY - rect.top) * scaleY;
+
+                const newSpot = {
+                    x1: startX,
+                    y1: startY,
+                    x2: endX,
+                    y2: endY
+                };
+                drawnLines.push(newSpot);
+                
+                redrawAllLines();
+            }
+        });
+        
+        function drawRectangle(x1, y1, x2, y2) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.rect(x1, y1, x2 - x1, y2 - y1);
+            ctx.stroke();
+        }
+        
+        function redrawAllLines() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawnLines.forEach((line, index) => {
+                drawRectangle(line.x1, line.y1, line.x2, line.y2);
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'spot-info';
+                infoDiv.textContent = `P${index + 1}`;
+                
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = rect.width / canvas.width;
+                const scaleY = rect.height / canvas.height;
+                
+                infoDiv.style.left = `${line.x1 * scaleX}px`;
+                infoDiv.style.top = `${line.y1 * scaleY}px`;
+                videoContainer.appendChild(infoDiv);
+            });
+        }
+        
+        // 폼 제출
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (drawnLines.length === 0) {
+                showMessage("주차 공간 영역을 하나 이상 그려주세요.", "text-red-500");
+                return;
+            }
+            
+            const formData = new FormData();
+            const videoFile = videoInput.files[0];
+            formData.append('video', videoFile);
+            formData.append('lines', JSON.stringify(drawnLines));
+            
+            showMessage("서버에 데이터를 전송 중입니다...", "text-yellow-500");
+            
+            try {
+                const response = await fetch('/set_parking_data', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage("설정 완료! 2초 후 대시보드로 이동합니다.", "text-green-500");
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 2000);
+                } else {
+                    showMessage(`오류: ${result.message}`, "text-red-500");
+                }
+            } catch (error) {
+                showMessage("오류가 발생했습니다. 서버를 확인해주세요.", "text-red-500");
+                console.error('Error:', error);
+            }
+        });
+        
+        function showMessage(msg, colorClass) {
+            messageArea.textContent = msg;
+            messageArea.className = `mt-6 text-center text-sm font-semibold ${colorClass}`;
+        }
+    </script>
+</body>
+</html>

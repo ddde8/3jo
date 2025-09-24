@@ -23,6 +23,8 @@ RESERVATION_HOLD_TIME = 300 # 5분 (단위: 초)
 # Shared variables for background threads
 latest_frame = None
 latest_frame_lock = threading.Lock()
+latest_yolo_frame = None
+latest_yolo_frame_lock = threading.Lock()
 
 # 신뢰도 임계값 설정
 CONF_THRESHOLD = 0.5
@@ -64,7 +66,7 @@ def analyze_video():
     """
     YOLO 모델을 로드하고 비디오 프레임을 분석하여 주차 공간 상태를 업데이트합니다.
     """
-    global PARKING_SPOTS, latest_frame
+    global PARKING_SPOTS, latest_frame, latest_yolo_frame
 
     if VIDEO_PATH is None:
         print("Error: Video path is not set.")
@@ -102,6 +104,16 @@ def analyze_video():
             if int(cls) in [2, 5, 7] and conf > CONF_THRESHOLD:
                 detected_cars.append(box)
 
+        # Draw YOLO bounding boxes on a separate frame for the left panel
+        yolo_frame = frame.copy()
+        for box in detected_cars:
+            x1, y1, x2, y2 = box.astype(int)
+            cv2.rectangle(yolo_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        
+        # Store the processed YOLO frame in the shared variable
+        with latest_yolo_frame_lock:
+            latest_yolo_frame = yolo_frame.copy()
+
         # Update parking spot status based on detected cars
         for spot_id, spot in PARKING_SPOTS.items():
             is_occupied = False
@@ -125,12 +137,27 @@ def analyze_video():
                         spot["status"] = "available"
                         spot["occupied_since"] = None
 
-        # Store the processed frame in the shared variable for the video feed
+        # Store the processed frame in the shared variable for the right panel
         with latest_frame_lock:
             latest_frame = frame.copy()
 
         # Pause to prevent high CPU usage
         time.sleep(1)
+
+def generate_yolo_feed():
+    """
+    Streams the live video feed with only YOLO detected objects.
+    """
+    while True:
+        with latest_yolo_frame_lock:
+            if latest_yolo_frame is None:
+                continue
+            frame = latest_yolo_frame.copy()
+        
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 def generate_video_feed():
     """
@@ -227,6 +254,10 @@ def dashboard():
     if not PARKING_SPOTS_DEFINED:
         return redirect(url_for('index'))
     return render_template('dashboard.html')
+
+@app.route('/yolo_feed')
+def yolo_feed():
+    return Response(generate_yolo_feed(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/video_feed')
 def video_feed():
