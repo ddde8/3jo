@@ -5,33 +5,175 @@
     <title>주차장 관리 대시보드</title>
     <style>
         body { margin: 0; background-color: #000; color: white; overflow: hidden; }
-        #app-container { position: relative; width: 100vw; height: 100vh; }
-        #video-feed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        #parking-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
+        
+        /* 탭 네비게이션 스타일 */
+        #tab-navigation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            padding: 10px 0;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .tab {
+            padding: 15px 30px;
+            margin: 0 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .tab.active {
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        #app-container { 
+            position: relative; 
+            width: 100vw; 
+            height: 100vh; 
+            padding-top: 80px;
+        }
+        
+        #video-feed { 
+            position: absolute; 
+            top: 80px; 
+            left: 0; 
+            width: 100%; 
+            height: calc(100% - 80px); 
+            object-fit: cover; 
+        }
+        
+        #parking-overlay { 
+            position: absolute; 
+            top: 80px; 
+            left: 0; 
+            width: 100%; 
+            height: calc(100% - 80px); 
+            z-index: 10; 
+        }
+        
         .spot-info { 
             position: absolute; 
-            padding: 5px; 
-            background-color: rgba(0,0,0,0.6); 
-            border-radius: 5px; 
+            padding: 8px; 
+            background-color: rgba(0,0,0,0.7); 
+            border-radius: 8px; 
             font-family: sans-serif; 
             text-align: center; 
             font-size: 14px;
             cursor: pointer;
-            transition: transform 0.2s ease-in-out;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
         }
+        
         .spot-info:hover {
             transform: scale(1.05);
-            background-color: rgba(0,0,0,0.8);
+            background-color: rgba(0,0,0,0.9);
+            border: 2px solid rgba(255, 255, 255, 0.3);
         }
-        .spot-id { font-weight: bold; font-size: 16px; }
-        .spot-status { font-size: 14px; margin-top: 5px; }
-        .spot-time { font-size: 12px; margin-top: 2px; }
-        .status-available { background-color: rgba(46, 204, 113, 0.8); } /* 초록 */
-        .status-occupied { background-color: rgba(231, 76, 60, 0.8); } /* 빨강 */
-        .status-reserved { background-color: rgba(255, 165, 0, 0.8); } /* 주황 */
+        
+        .spot-id { 
+            font-weight: bold; 
+            font-size: 16px; 
+            margin-bottom: 4px;
+        }
+        
+        .spot-status { 
+            font-size: 13px; 
+            margin: 2px 0; 
+        }
+        
+        .spot-time { 
+            font-size: 11px; 
+            margin-top: 4px; 
+            opacity: 0.9;
+        }
+        
+        .status-available { 
+            background-color: rgba(46, 204, 113, 0.85); 
+            border-color: #2ecc71;
+        }
+        
+        .status-occupied { 
+            background-color: rgba(231, 76, 60, 0.85); 
+            border-color: #e74c3c;
+        }
+        
+        .status-reserved { 
+            background-color: rgba(255, 165, 0, 0.85); 
+            border-color: #f39c12;
+        }
+        
+        /* 상태 표시 패널 */
+        #status-panel {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 50;
+            min-width: 200px;
+        }
+        
+        .status-summary {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        
+        .status-available-summary { background: rgba(46, 204, 113, 0.3); }
+        .status-occupied-summary { background: rgba(231, 76, 60, 0.3); }
+        .status-reserved-summary { background: rgba(255, 165, 0, 0.3); }
     </style>
 </head>
 <body>
+
+<div id="tab-navigation">
+    <a href="/parking_setup" class="tab">주차 설정</a>
+    <a href="/dashboard" class="tab active">대시보드</a>
+</div>
+
+<div id="status-panel">
+    <h3 style="margin-top: 0; color: #4ECDC4;">📊 실시간 현황</h3>
+    <div class="status-summary status-available-summary">
+        <span>🟢 사용 가능:</span>
+        <span id="available-count">0</span>
+    </div>
+    <div class="status-summary status-occupied-summary">
+        <span>🔴 사용 중:</span>
+        <span id="occupied-count">0</span>
+    </div>
+    <div class="status-summary status-reserved-summary">
+        <span>🟠 예약됨:</span>
+        <span id="reserved-count">0</span>
+    </div>
+    <hr style="border: 1px solid rgba(255,255,255,0.2); margin: 15px 0;">
+    <div style="font-size: 12px; opacity: 0.7; text-align: center;">
+        빈 공간을 클릭하여 예약하세요
+    </div>
+</div>
 
 <div id="app-container">
     <img id="video-feed" src="{{ url_for('video_feed') }}">
@@ -43,6 +185,22 @@
     const videoFeed = document.getElementById('video-feed');
     let spots = {};
     let isInitialLoad = true;
+
+    // 상태 카운터 업데이트 함수
+    function updateStatusCounters(data) {
+        let available = 0, occupied = 0, reserved = 0;
+        
+        for (const id in data) {
+            const status = data[id].status;
+            if (status === 'available') available++;
+            else if (status === 'occupied') occupied++;
+            else if (status === 'reserved') reserved++;
+        }
+        
+        document.getElementById('available-count').textContent = available;
+        document.getElementById('occupied-count').textContent = occupied;
+        document.getElementById('reserved-count').textContent = reserved;
+    }
 
     async function updateDashboard() {
         try {
@@ -67,7 +225,28 @@
                                 .then(res => res.json())
                                 .then(result => {
                                     if (result.success) {
-                                        alert(`${id}가 예약되었습니다. 남은 시간: 5분`);
+                                        // 성공 알림 스타일 개선
+                                        const notification = document.createElement('div');
+                                        notification.style.cssText = `
+                                            position: fixed;
+                                            top: 50%;
+                                            left: 50%;
+                                            transform: translate(-50%, -50%);
+                                            background: linear-gradient(45deg, #27ae60, #2ecc71);
+                                            color: white;
+                                            padding: 20px 30px;
+                                            border-radius: 10px;
+                                            font-size: 18px;
+                                            font-weight: bold;
+                                            z-index: 1000;
+                                            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+                                        `;
+                                        notification.textContent = `✅ ${id} 예약 완료! (5분간 유지)`;
+                                        document.body.appendChild(notification);
+                                        
+                                        setTimeout(() => {
+                                            document.body.removeChild(notification);
+                                        }, 3000);
                                     } else {
                                         alert(result.message);
                                     }
@@ -93,22 +272,22 @@
 
                 if (spotData.status === 'occupied') {
                     spotDiv.classList.add('status-occupied');
-                    statusText = '점유됨';
+                    statusText = '사용 중';
                     const elapsedTime = spotData.occupied_since ? Math.floor(Date.now() / 1000) - spotData.occupied_since : 0;
                     const minutes = Math.floor(elapsedTime / 60);
                     const seconds = elapsedTime % 60;
-                    timeText = `(${minutes}분 ${seconds}초)`;
+                    timeText = `${minutes}분 ${seconds}초`;
                 } else if (spotData.status === 'reserved') {
                     spotDiv.classList.add('status-reserved');
                     statusText = '예약됨';
                     const remainingTime = spotData.remaining_time;
                     const minutes = Math.floor(remainingTime / 60);
                     const seconds = remainingTime % 60;
-                    timeText = `(남은 시간: ${minutes}분 ${seconds}초)`;
+                    timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
                 } else {
                     spotDiv.classList.add('status-available');
-                    statusText = '예약 가능';
-                    timeText = "(클릭하여 예약)";
+                    statusText = '사용 가능';
+                    timeText = "클릭하여 예약";
                 }
 
                 spotDiv.querySelector('.spot-status').textContent = statusText;
@@ -122,6 +301,10 @@
                 spotDiv.style.width = `${(x2 - x1) * scaleX}px`;
                 spotDiv.style.height = `${(y2 - y1) * scaleY}px`;
             }
+            
+            // 상태 카운터 업데이트
+            updateStatusCounters(data);
+            
         } catch (error) {
             console.error("데이터 업데이트 실패:", error);
         }

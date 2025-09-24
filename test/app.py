@@ -28,6 +28,7 @@ latest_frame_lock = threading.Lock()
 IOU_THRESHOLD = 0.3
 CONF_THRESHOLD = 0.5
 OCCUPIED_RELEASE_DELAY = 3  # 차량 사라진 후 3초 유지
+PORT = 5001
 
 # --------------------
 # 💡 Helper functions
@@ -175,9 +176,11 @@ def generate_video_feed():
 # --------------------
 @app.route('/')
 def index():
-    if PARKING_SPOTS_DEFINED:
-        return redirect(url_for('dashboard'))
     return render_template('index.html')
+
+@app.route('/parking_setup')
+def parking_setup():
+    return render_template('parking_setup.html')
 
 @app.route('/set_parking_data', methods=['POST'])
 def set_parking_data():
@@ -251,4 +254,4 @@ def get_parking_status():
     return jsonify(status_copy)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=PORT)
