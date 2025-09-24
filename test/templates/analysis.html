@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>YOLO 분석 결과</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: linear-gradient(135deg, #2c3e50, #34495e); 
+            color: white; 
+            overflow: hidden; 
+            font-family: 'Arial', sans-serif;
+        }
+        
+        /* 탭 네비게이션 스타일 */
+        #tab-navigation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            padding: 10px 0;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .tab {
+            padding: 15px 30px;
+            margin: 0 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .tab.active {
+            background: linear-gradient(45deg, #9b59b6, #8e44ad);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        #app-container { 
+            position: relative; 
+            width: 100vw; 
+            height: 100vh; 
+            padding-top: 80px;
+        }
+        
+        #video-feed { 
+            position: absolute; 
+            top: 80px; 
+            left: 0; 
+            width: 100%; 
+            height: calc(100% - 80px); 
+            object-fit: contain; 
+            background: #000;
+        }
+        
+        /* 분석 정보 패널 */
+        #analysis-panel {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 20px;
+            border-radius: 15px;
+            font-size: 14px;
+            z-index: 50;
+            min-width: 280px;
+            border: 2px solid rgba(155, 89, 182, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        .analysis-title {
+            color: #9b59b6;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            border-bottom: 2px solid rgba(155, 89, 182, 0.3);
+            padding-bottom: 10px;
+        }
+        
+        .detection-stats {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(155, 89, 182, 0.2);
+        }
+        
+        .legend {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .legend-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ecf0f1;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 15px;
+            margin-right: 10px;
+            border-radius: 3px;
+        }
+        
+        .color-vehicle { background-color: #ffff00; }
+        .color-person { background-color: #ff0000; }
+        .color-other { background-color: #808080; }
+        .color-available { background-color: #00ff00; }
+        .color-occupied { background-color: #ff0000; }
+        .color-reserved { background-color: #ffa500; }
+        
+        #detection-count {
+            font-size: 24px;
+            font-weight: bold;
+            color: #9b59b6;
+        }
+        
+        #vehicle-count {
+            font-size: 20px;
+            font-weight: bold;
+            color: #f1c40f;
+        }
+        
+        .refresh-info {
+            text-align: center;
+            font-size: 11px;
+            color: #bdc3c7;
+            margin-top: 15px;
+            opacity: 0.7;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-active {
+            background-color: #27ae60;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="tab-navigation">
+    <a href="/parking_setup" class="tab">주차 설정</a>
+    <a href="/dashboard" class="tab">대시보드</a>
+    <a href="/analysis" class="tab active">AI 분석</a>
+</div>
+
+<div id="analysis-panel">
+    <div class="analysis-title">🤖 실시간 AI 분석</div>
+    
+    <div class="detection-stats">
+        <span>총 탐지 객체:</span>
+        <span id="detection-count">0</span>
+    </div>
+    
+    <div class="detection-stats">
+        <span>🚗 차량 감지:</span>
+        <span id="vehicle-count">0</span>
+    </div>
+    
+    <div class="legend">
+        <div class="legend-title">📋 범례</div>
+        
+        <div style="margin-bottom: 10px; font-weight: bold; color: #e74c3c;">탐지 객체:</div>
+        <div class="legend-item">
+            <div class="legend-color color-vehicle"></div>
+            <span>차량 (자동차, 트럭, 버스)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color color-person"></div>
+            <span>사람</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color color-other"></div>
+            <span>기타 객체</span>
+        </div>
+        
+        <div style="margin: 15px 0 10px 0; font-weight: bold; color: #3498db;">주차 공간:</div>
+        <div class="legend-item">
+            <div class="legend-color color-available"></div>
+            <span>사용 가능</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color color-occupied"></div>
+            <span>사용 중</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color color-reserved"></div>
+            <span>예약됨</span>
+        </div>
+    </div>
+    
+    <div class="refresh-info">
+        <span class="status-indicator status-active"></span>
+        실시간 업데이트 중
+    </div>
+</div>
+
+<div id="app-container">
+    <img id="video-feed" src="{{ url_for('analysis_feed') }}">
+</div>
+
+<script>
+    // 주기적으로 통계 정보 업데이트 (선택사항)
+    async function updateStats() {
+        try {
+            // 추후 서버에서 실시간 통계를 가져올 수 있는 엔드포인트 추가 가능
+            // const response = await fetch('/analysis_stats');
+            // const stats = await response.json();
+            // document.getElementById('detection-count').textContent = stats.total_detections;
+            // document.getElementById('vehicle-count').textContent = stats.vehicle_count;
+        } catch (error) {
+            console.error('통계 업데이트 실패:', error);
+        }
+    }
+
+    // 페이지 로드 후 초기화
+    window.addEventListener('load', () => {
+        // setInterval(updateStats, 2000); // 2초마다 업데이트
+    });
+
+    // 비디오 로드 이벤트
+    const videoFeed = document.getElementById('video-feed');
+    videoFeed.addEventListener('load', () => {
+        console.log('AI 분석 화면이 로드되었습니다.');
+    });
+
+    videoFeed.addEventListener('error', () => {
+        console.error('비디오 피드 로드 실패');
+    });
+</script>
+
+</body>
+</html>
