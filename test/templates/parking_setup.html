@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>주차장 설정</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: linear-gradient(135deg, #2c3e50, #34495e); 
+            color: #fff; 
+            font-family: 'Arial', sans-serif; 
+            overflow: hidden; 
+        }
+        
+        /* 탭 네비게이션 스타일 */
+        #tab-navigation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            padding: 10px 0;
+        }
+        
+        .tab {
+            padding: 15px 30px;
+            margin: 0 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .tab.active {
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        #app-container { 
+            position: relative; 
+            width: 100vw; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            padding-top: 80px;
+        }
+        
+        #video-container { 
+            position: relative; 
+            max-width: 90%; 
+            max-height: 70%; 
+        }
+        
+        #video-player { 
+            max-width: 100%; 
+            max-height: 100%; 
+            display: block; 
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        
+        #line-canvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            z-index: 10; 
+            cursor: crosshair; 
+            border-radius: 10px;
+        }
+        
+        #controls { 
+            position: fixed; 
+            bottom: 20px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            z-index: 20; 
+            display: flex; 
+            gap: 15px; 
+            align-items: center;
+        }
+        
+        .button { 
+            padding: 15px 25px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            border: none; 
+            border-radius: 25px; 
+            background: linear-gradient(45deg, #3498db, #2980b9); 
+            color: white; 
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+        
+        .button:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+        
+        .button:disabled { 
+            background: #7f8c8d; 
+            cursor: not-allowed; 
+            transform: none; 
+            box-shadow: none;
+        }
+        
+        #message-overlay { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            z-index: 5; 
+            background-color: rgba(0, 0, 0, 0.8); 
+            color: white; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            text-align: center; 
+            border-radius: 10px;
+        }
+        
+        #message-overlay h2 { 
+            margin: 0; 
+            font-size: 2.5em; 
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #message-overlay p { 
+            margin-top: 10px; 
+            font-size: 1.2em; 
+            opacity: 0.9;
+        }
+        
+        #spot-counter {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #4ECDC4;
+        }
+    </style>
+</head>
+<body>
+
+<div id="tab-navigation">
+    <a href="/parking_setup" class="tab active">주차 설정</a>
+    <a href="/dashboard" class="tab">대시보드</a>
+    <a href="/analysis" class="tab">AI 분석</a>
+</div>
+
+<div id="spot-counter">
+    그린 주차 구역: <span id="spot-count">0</span>개
+</div>
+
+<div id="app-container">
+    <div id="message-overlay">
+        <h2>🚗 주차장 동영상을 업로드해주세요</h2>
+        <p>주차 구역을 설정하기 위해 동영상 파일을 선택하세요</p>
+        <p style="font-size: 0.9em; color: #bbb; margin-top: 20px;">
+            동영상이 로드되면 마우스로 드래그하여 주차 구역을 표시할 수 있습니다
+        </p>
+    </div>
+    <div id="video-container">
+        <video id="video-player" controls></video>
+        <canvas id="line-canvas"></canvas>
+    </div>
+</div>
+
+<div id="controls">
+    <label for="video-upload" class="button">📁 동영상 업로드</label>
+    <input type="file" id="video-upload" accept="video/*" style="display: none;">
+    <button id="clear-lines-btn" class="button" style="background: linear-gradient(45deg, #e74c3c, #c0392b);">🗑️ 모두 지우기</button>
+    <button id="submit-lines-btn" class="button" style="background: linear-gradient(45deg, #27ae60, #2ecc71);" disabled>✅ 설정 완료</button>
+</div>
+
+<script>
+    const videoPlayer = document.getElementById('video-player');
+    const canvas = document.getElementById('line-canvas');
+    const ctx = canvas.getContext('2d');
+    const videoUpload = document.getElementById('video-upload');
+    const submitBtn = document.getElementById('submit-lines-btn');
+    const clearBtn = document.getElementById('clear-lines-btn');
+    const messageOverlay = document.getElementById('message-overlay');
+    const spotCountElement = document.getElementById('spot-count');
+
+    let isDrawing = false;
+    let startPoint = null;
+    let allSpots = []; 
+
+    function updateSpotCounter() {
+        spotCountElement.textContent = allSpots.length;
+    }
+
+    // 동영상 파일이 선택되면 비디오 재생
+    videoUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const videoUrl = URL.createObjectURL(file);
+            videoPlayer.src = videoUrl;
+            videoPlayer.onloadedmetadata = () => {
+                canvas.width = videoPlayer.videoWidth;
+                canvas.height = videoPlayer.videoHeight;
+                videoPlayer.style.width = `${videoPlayer.videoWidth}px`;
+                videoPlayer.style.height = `${videoPlayer.videoHeight}px`;
+                videoPlayer.pause(); 
+                messageOverlay.style.display = 'none';
+                submitBtn.disabled = false;
+            };
+        }
+    });
+
+    // 모든 선 지우기
+    clearBtn.addEventListener('click', () => {
+        allSpots = [];
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        updateSpotCounter();
+    });
+
+    // 사각형 그리기 로직
+    canvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        startPoint = { x, y };
+        ctx.strokeStyle = '#4ECDC4';
+        ctx.lineWidth = 3;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        allSpots.forEach((spot, index) => {
+            ctx.strokeStyle = '#4ECDC4';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.strokeRect(spot.x1, spot.y1, spot.x2 - spot.x1, spot.y2 - spot.y1);
+            
+            // 번호 표시
+            ctx.fillStyle = '#4ECDC4';
+            ctx.font = '16px Arial';
+            ctx.fillText(`P${index + 1}`, spot.x1 + 5, spot.y1 + 20);
+        });
+
+        ctx.strokeStyle = '#FF6B6B';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.strokeRect(startPoint.x, startPoint.y, endX - startPoint.x, endY - startPoint.y);
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        
+        const newSpot = { 
+            x1: Math.min(startPoint.x, endX), 
+            y1: Math.min(startPoint.y, endY), 
+            x2: Math.max(startPoint.x, endX), 
+            y2: Math.max(startPoint.y, endY) 
+        };
+        
+        // 너무 작은 영역은 무시
+        if (Math.abs(newSpot.x2 - newSpot.x1) > 20 && Math.abs(newSpot.y2 - newSpot.y1) > 20) {
+            allSpots.push(newSpot);
+            updateSpotCounter();
+        }
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        allSpots.forEach((spot, index) => {
+            ctx.strokeStyle = '#4ECDC4';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.strokeRect(spot.x1, spot.y1, spot.x2 - spot.x1, spot.y2 - spot.y1);
+            
+            // 번호 표시
+            ctx.fillStyle = '#4ECDC4';
+            ctx.font = '16px Arial';
+            ctx.fillText(`P${index + 1}`, spot.x1 + 5, spot.y1 + 20);
+        });
+    });
+
+    // 백엔드로 주차 선 데이터 전송
+    submitBtn.addEventListener('click', async () => {
+        const videoFile = videoUpload.files[0];
+        if (!videoFile) {
+            alert('동영상 파일을 먼저 업로드해주세요.');
+            return;
+        }
+
+        if (allSpots.length === 0) {
+            alert('최소 하나의 주차 구역을 설정해주세요.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('video', videoFile);
+        formData.append('lines', JSON.stringify(allSpots)); 
+
+        try {
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ 설정 중...';
+            
+            const response = await fetch('/set_parking_data', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                alert(`주차 구역 설정이 완료되었습니다! (총 ${allSpots.length}개 구역)\n이제 실시간 모니터링을 시작합니다.`);
+                window.location.href = "/dashboard";
+            } else {
+                alert('설정 저장에 실패했습니다.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '✅ 설정 완료';
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('오류가 발생했습니다.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '✅ 설정 완료';
+        }
+    });
+</script>
+
+</body>
+</html>

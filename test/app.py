@@ -23,10 +23,13 @@ RESERVATION_HOLD_TIME = 300 # 5분 (단위: 초)
 # Shared variables for background threads
 latest_frame = None
 latest_frame_lock = threading.Lock()
+latest_detections = []
+latest_detections_lock = threading.Lock()
 
 # 신뢰도 임계값 설정
 CONF_THRESHOLD = 0.5
-OCCUPIED_RELEASE_DELAY = 3  # 차량이 사라진 후 3초 동안 점유 상태 유지
+OCCUPIED_RELEASE_DELAY = 3  # 차량 사라진 후 3초 유지
+PORT = 5001
 
 # --------------------
 # 💡 Helper functions
@@ -64,7 +67,7 @@ def analyze_video():
     """
     YOLO 모델을 로드하고 비디오 프레임을 분석하여 주차 공간 상태를 업데이트합니다.
     """
-    global PARKING_SPOTS, latest_frame
+    global PARKING_SPOTS, latest_frame, latest_detections
 
     if VIDEO_PATH is None:
         print("Error: Video path is not set.")
@@ -94,10 +97,19 @@ def analyze_video():
         results = model(frame, verbose=False)[0]
         
         detected_cars = []
+        all_detections = []
         # Iterate through all detected objects with confidence filtering
         for box, cls, conf in zip(results.boxes.xyxy.cpu().numpy(),
                                   results.boxes.cls.cpu().numpy(),
                                   results.boxes.conf.cpu().numpy()):
+            class_name = model.names[int(cls)]
+            detection_info = {
+                'box': box.tolist(),
+                'class': class_name,
+                'confidence': float(conf)
+            }
+            all_detections.append(detection_info)
+            
             # Filter for cars, buses, and trucks (COCO dataset class IDs: car=2, bus=5, truck=7)
             if int(cls) in [2, 5, 7] and conf > CONF_THRESHOLD:
                 detected_cars.append(box)
@@ -125,9 +137,12 @@ def analyze_video():
                         spot["status"] = "available"
                         spot["occupied_since"] = None
 
-        # Store the processed frame in the shared variable for the video feed
+        # Store the processed frame and detections in the shared variables
         with latest_frame_lock:
             latest_frame = frame.copy()
+        
+        with latest_detections_lock:
+            latest_detections = all_detections.copy()
 
         # Pause to prevent high CPU usage
         time.sleep(1)
@@ -164,14 +179,99 @@ def generate_video_feed():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
+def generate_analysis_feed():
+    """
+    YOLO 분석 결과와 바운딩 박스를 보여주는 비디오 피드를 스트리밍합니다.
+    """
+    while True:
+        with latest_frame_lock:
+            if latest_frame is None:
+                continue
+            frame = latest_frame.copy()
+
+        with latest_detections_lock:
+            detections = latest_detections.copy()
+
+        # 모든 YOLO 탐지 결과에 바운딩 박스와 레이블 그리기
+        for detection in detections:
+            box = detection['box']
+            class_name = detection['class']
+            confidence = detection['confidence']
+            
+            x1, y1, x2, y2 = map(int, box)
+            
+            # 클래스에 따른 색상 설정
+            if class_name in ['car', 'truck', 'bus']:
+                color = (0, 255, 255)  # 노란색 - 차량
+            elif class_name == 'person':
+                color = (255, 0, 0)    # 파란색 - 사람
+            else:
+                color = (128, 128, 128) # 회색 - 기타
+            
+            # 바운딩 박스 그리기
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            
+            # 레이블과 신뢰도 표시
+            label = f"{class_name}: {confidence:.2f}"
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            
+            # 레이블 배경 그리기
+            cv2.rectangle(frame, (x1, y1 - label_size[1] - 10), 
+                         (x1 + label_size[0], y1), color, -1)
+            
+            # 레이블 텍스트 그리기
+            cv2.putText(frame, label, (x1, y1 - 5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+        # 주차 공간도 함께 표시
+        if PARKING_SPOTS_DEFINED and PARKING_SPOTS:
+            for spot_id, spot_data in PARKING_SPOTS.items():
+                if "coords" in spot_data and isinstance(spot_data["coords"], list) and len(spot_data["coords"]) == 4:
+                    x1, y1, x2, y2 = spot_data["coords"]
+                    x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
+
+                    status = spot_data.get("status")
+                    if status == "occupied":
+                        color = (0, 0, 255) # 빨간색
+                        thickness = 3
+                    elif status == "reserved":
+                        color = (0, 165, 255) # 주황색
+                        thickness = 3
+                    else:
+                        color = (0, 255, 0) # 초록색
+                        thickness = 2
+                    
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+                    
+                    # 주차 공간 ID 표시
+                    cv2.putText(frame, spot_id, (x1 + 5, y1 + 25), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+
+        # 통계 정보 표시
+        stats_text = f"Total Objects: {len(detections)}"
+        vehicles = len([d for d in detections if d['class'] in ['car', 'truck', 'bus']])
+        vehicles_text = f"Vehicles: {vehicles}"
+        
+        cv2.putText(frame, stats_text, (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame, vehicles_text, (10, 60), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
 # --------------------
 # 💡 Flask Routes (API Endpoints)
 # --------------------
 @app.route('/')
 def index():
-    if PARKING_SPOTS_DEFINED:
-        return redirect(url_for('dashboard'))
     return render_template('index.html')
+
+@app.route('/parking_setup')
+def parking_setup():
+    return render_template('parking_setup.html')
 
 @app.route('/set_parking_data', methods=['POST'])
 def set_parking_data():
@@ -228,9 +328,19 @@ def dashboard():
         return redirect(url_for('index'))
     return render_template('dashboard.html')
 
+@app.route('/analysis')
+def analysis():
+    if not PARKING_SPOTS_DEFINED:
+        return redirect(url_for('index'))
+    return render_template('analysis.html')
+
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_video_feed(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/analysis_feed')
+def analysis_feed():
+    return Response(generate_analysis_feed(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/parking_status')
 def get_parking_status():
@@ -245,4 +355,4 @@ def get_parking_status():
     return jsonify(status_copy)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=PORT)
