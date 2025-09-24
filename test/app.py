@@ -5,119 +5,173 @@ import threading
 import time
 from flask import Flask, Response, render_template, request, jsonify, redirect, url_for
 from werkzeug.utils import secure_filename
-# from ultralytics import YOLO # YOLO 사용 시 주석 해제
+from ultralytics import YOLO
 
 app = Flask(__name__)
 
-# 업로드 폴더 설정
+# Upload folder configuration
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# 전역 변수 (서버 상태 관리)
+# Global variables for server state management
 PARKING_SPOTS_DEFINED = False
 VIDEO_PATH = None
 PARKING_SPOTS = {} # {'P1': {'coords': [...], 'status': 'available', 'reserved_until': None, ...}}
 RESERVATION_HOLD_TIME = 300 # 5분 (단위: 초)
 
+# Shared variables for background threads
+latest_frame = None
+latest_frame_lock = threading.Lock()
+
+# IoU 임계값 및 신뢰도 임계값 설정
+IOU_THRESHOLD = 0.3
+CONF_THRESHOLD = 0.5
+OCCUPIED_RELEASE_DELAY = 3  # 차량 사라진 후 3초 유지
+
 # --------------------
-# 💡 주차장 분석 및 예약 모니터링 로직
+# 💡 Helper functions
+# --------------------
+def iou(boxA, boxB):
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    
+    interWidth = max(0, xB - xA)
+    interHeight = max(0, yB - yA)
+    interArea = interWidth * interHeight
+    
+    boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+    boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+    
+    unionArea = boxAArea + boxBArea - interArea + 1e-6
+    
+    return interArea / unionArea
+
+# --------------------
+# 💡 Parking Analysis and Reservation Monitoring Logic
 # --------------------
 def reservation_monitor():
     """
-    백그라운드에서 예약 시간을 감시하고, 만료된 예약을 취소합니다.
+    Monitors reservation times in the background and cancels expired reservations.
     """
     while True:
         now = time.time()
         for spot_id in list(PARKING_SPOTS.keys()):
             spot = PARKING_SPOTS[spot_id]
-            if spot.get("status") == "reserved" and now > spot.get("reserved_until"):
+            if spot.get("status") == "reserved" and now > spot.get("reserved_until", 0):
                 print(f"예약 시간 만료: {spot_id} 예약 취소")
                 spot["status"] = "available"
                 spot["reserved_until"] = None
-        time.sleep(1) # 1초마다 확인
+        time.sleep(1)
 
 def analyze_video():
     """
-    YOLO로 동영상 분석 및 주차장 상태를 업데이트하는 함수.
+    Loads the YOLO model and continuously analyzes video frames for car detection.
+    Updates the parking spot status and shares the latest processed frame.
     """
-    global PARKING_SPOTS
-    cap = cv2.VideoCapture(VIDEO_PATH)
+    global PARKING_SPOTS, latest_frame
 
-    if not cap.isOpened():
-        print("Error: Could not open video file.")
+    if VIDEO_PATH is None:
+        print("Error: Video path is not set.")
         return
 
-    # YOLO 모델 로드 (주석 해제 후 사용)
-    # model = YOLO('yolov8n.pt') 
+    cap = cv2.VideoCapture(VIDEO_PATH)
+    if not cap.isOpened():
+        print(f"Error: Could not open video file at {VIDEO_PATH}.")
+        return
+
+    try:
+        # Load the YOLO model just once, outside the loop
+        model = YOLO('yolo11n.pt')
+        print(f"YOLO model loaded. Class names: {model.names}")
+    except Exception as e:
+        print(f"Error loading YOLO model: {e}")
+        return
 
     while True:
         ret, frame = cap.read()
         if not ret:
+            # Loop the video if it ends
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             continue
         
-        # ----------------------------------------------------
-        # 💡 실제 YOLO 감지 및 주차 공간 점유 확인 로직
-        # ----------------------------------------------------
-        # 지금은 테스트를 위해 임의의 데이터로 대체합니다.
-        import random
-        for spot_id in PARKING_SPOTS:
-            is_occupied_in_frame = random.choice([True, False])
+        # Perform object detection on the current frame
+        results = model(frame, verbose=False)[0]
+        
+        detected_cars = []
+        # Iterate through all detected objects with confidence filtering
+        for box, cls, conf in zip(results.boxes.xyxy.cpu().numpy(),
+                                  results.boxes.cls.cpu().numpy(),
+                                  results.boxes.conf.cpu().numpy()):
+            # Filter for cars, buses, and trucks (COCO dataset class IDs: car=2, bus=5, truck=7)
+            if int(cls) in [2, 5, 7] and conf > CONF_THRESHOLD:
+                detected_cars.append(box)
+
+        # Update parking spot status based on detected cars
+        for spot_id, spot in PARKING_SPOTS.items():
+            is_occupied = False
+            spot_rect = spot["coords"]
+
+            for car_box in detected_cars:
+                if iou(spot_rect, car_box) > IOU_THRESHOLD:
+                    is_occupied = True
+                    break
             
-            spot = PARKING_SPOTS[spot_id]
-            
-            # CASE 1: 차량이 감지되었을 때
-            if is_occupied_in_frame:
+            if is_occupied:
                 if spot.get("status") in ["available", "reserved"]:
                     spot["status"] = "occupied"
                     spot["occupied_since"] = time.time()
-                    spot["reserved_until"] = None # 예약 취소
-            
-            # CASE 2: 차량이 감지되지 않았을 때
-            elif spot.get("status") == "occupied":
-                # 비점유 상태로 변경
-                spot["status"] = "available"
-                spot["occupied_since"] = None
+                    spot["reserved_until"] = None
+            else:
+                if spot.get("status") == "occupied":
+                    occupied_since = spot.get("occupied_since") or 0
+                    if time.time() - occupied_since > OCCUPIED_RELEASE_DELAY:
+                        spot["status"] = "available"
+                        spot["occupied_since"] = None
 
-        time.sleep(1) 
+        # Store the processed frame in the shared variable for the video feed
+        with latest_frame_lock:
+            latest_frame = frame.copy()
+
+        # Pause to prevent high CPU usage
+        time.sleep(1)
 
 def generate_video_feed():
     """
-    웹으로 실시간 비디오 프레임을 스트리밍하는 함수.
+    Streams the live video feed with parking spot status overlaid.
     """
-    cap = cv2.VideoCapture(VIDEO_PATH)
-    if not cap.isOpened():
-        return
-
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            continue
+        with latest_frame_lock:
+            if latest_frame is None:
+                continue
+            frame = latest_frame.copy()
 
-        for spot_id, spot_data in PARKING_SPOTS.items():
-            if "coords" in spot_data:
-                x1, y1, x2, y2 = spot_data["coords"]
-                
-                # 상태에 따라 색상 결정
-                status = spot_data.get("status")
-                if status == "occupied":
-                    color = (0, 0, 255) # 빨강
-                elif status == "reserved":
-                    color = (255, 165, 0) # 주황색
-                else:
-                    color = (0, 255, 0) # 초록색
-                
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 4)
+        # Overlay parking spot status on the frame
+        if PARKING_SPOTS_DEFINED and PARKING_SPOTS:
+            for spot_id, spot_data in PARKING_SPOTS.items():
+                if "coords" in spot_data and isinstance(spot_data["coords"], list) and len(spot_data["coords"]) == 4:
+                    x1, y1, x2, y2 = spot_data["coords"]
+                    x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
 
+                    status = spot_data.get("status")
+                    if status == "occupied":
+                        color = (0, 0, 255) # Red
+                    elif status == "reserved":
+                        color = (255, 165, 0) # Orange
+                    else:
+                        color = (0, 255, 0) # Green
+                    
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 4)
+        
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 # --------------------
-# 💡 Flask 라우트 (API 엔드포인트)
+# 💡 Flask Routes (API Endpoints)
 # --------------------
 @app.route('/')
 def index():
@@ -127,7 +181,7 @@ def index():
 
 @app.route('/set_parking_data', methods=['POST'])
 def set_parking_data():
-    global PARKING_SPOTS_DEFINED, VIDEO_PATH, PARKING_SPOTS
+    global PARKING_SPOTS_DEFINED, VIDEO_PATH, PARKING_SPOTS, latest_frame
     
     video_file = request.files.get('video')
     lines_json = request.form.get('lines')
@@ -141,7 +195,7 @@ def set_parking_data():
     filename = secure_filename(video_file.filename)
     VIDEO_PATH = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     video_file.save(VIDEO_PATH)
-
+    
     all_lines = json.loads(lines_json)
     PARKING_SPOTS = {}
     for i, line in enumerate(all_lines):
@@ -155,15 +209,16 @@ def set_parking_data():
 
     PARKING_SPOTS_DEFINED = True
     
+    # Start the background threads for analysis and reservation monitoring
     threading.Thread(target=analyze_video, daemon=True).start()
     threading.Thread(target=reservation_monitor, daemon=True).start()
-
+    
     return jsonify({"message": "데이터가 성공적으로 설정되었습니다."})
 
 @app.route('/reserve/<spot_id>', methods=['POST'])
 def reserve_spot(spot_id):
     """
-    주차 공간을 예약하는 API 엔드포인트
+    API endpoint to reserve a parking spot.
     """
     global PARKING_SPOTS
     spot = PARKING_SPOTS.get(spot_id)
@@ -186,7 +241,6 @@ def video_feed():
 @app.route('/parking_status')
 def get_parking_status():
     status_copy = PARKING_SPOTS.copy()
-    # reserved_until 값을 남은 시간으로 변환
     for spot_id, spot_data in status_copy.items():
         if spot_data.get("status") == "reserved" and spot_data.get("reserved_until"):
             remaining_time = int(spot_data["reserved_until"] - time.time())
